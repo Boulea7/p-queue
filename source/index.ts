@@ -654,7 +654,8 @@ export default class PQueue<QueueType extends Queue<RunFunction, EnqueueOptionsT
 			return;
 		}
 
-		await this.#onEvent('empty');
+		// The last queued task can start before the empty event is emitted.
+		await this.#onEvent(['empty', 'active'], () => this.#queue.size === 0);
 	}
 
 	/**

@@ -243,6 +243,43 @@ test('.onEmpty()', async () => {
 	assert.equal(queue.size, 0);
 });
 
+test('.onEmpty() settles when the last queued task starts', async () => {
+	const queue = new PQueue({concurrency: 1, autoStart: false});
+	const first = pDefer<void>();
+	const second = pDefer<void>();
+	const firstTask = queue.add(() => first.promise);
+	const secondTask = queue.add(() => second.promise);
+
+	const earlyPendingAtSettle: number[] = [];
+	const earlyEmpty = Promise.all(Array.from({length: 2}, async () => {
+		await queue.onEmpty();
+		earlyPendingAtSettle.push(queue.pending);
+	}));
+	let idleSettled = false;
+	const idle = (async () => {
+		await queue.onIdle();
+		idleSettled = true;
+	})();
+
+	queue.start();
+	first.resolve();
+	await firstTask;
+	await new Promise<void>(resolve => {
+		setImmediate(resolve);
+	});
+	assert.equal(queue.size, 0);
+	assert.equal(queue.pending, 1);
+	await queue.onEmpty();
+	const earlyPendingBeforeIdle = [...earlyPendingAtSettle];
+	const idleBeforeLastCompletion = idleSettled;
+	assert.equal(queue.listenerCount('active'), 0);
+
+	second.resolve();
+	await Promise.all([secondTask, earlyEmpty, idle]);
+	assert.deepEqual(earlyPendingBeforeIdle, [1, 1]);
+	assert.equal(idleBeforeLastCompletion, false);
+});
+
 test('.onIdle()', async () => {
 	const queue = new PQueue({concurrency: 2});
 
